@@ -115,13 +115,29 @@ async def init():
             """)
 
             await cur.execute("""
+            CREATE TABLE IF NOT EXISTS bot_tokens (
+            id INT PRIMARY KEY DEFAULT 1,
+            access_token TEXT NOT NULL,
+            refresh_token TEXT NOT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            );
+            """)
+
+            await cur.execute("""
             CREATE TABLE IF NOT EXISTS session_tokens (
                 id INT PRIMARY KEY,
                 access_token TEXT,
                 refresh_token TEXT
             )
-            """)
+        """)
+            
+            await cur.execute("""
+            INSERT INTO session_tokens (id, access_token, refresh_token) 
+            VALUES (1, '', '') 
+            ON DUPLICATE KEY UPDATE id=id
+        """)
 
+            
 async def add_user(user_id: int) -> bool:
     async with db_pool.acquire() as conn:
         async with conn.cursor() as cur:
@@ -834,6 +850,4 @@ async def save_tokens_to_db(access_token, refresh_token):
                 except:
                     pass
                 return False
-
-
 
