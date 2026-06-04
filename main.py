@@ -10,6 +10,7 @@ from config import TOKEN
 from database.db import init_pool, init
 
 # استيراد الراوترات (تأكد من مطابقة أسماء الملفات لديك)
+from ichancy.ichancy_api import initialize_tokens
 from handlers import user, admin, referral
 from buttons import deposit  # ملف الشحن الذي يحتوي على سيرياتيل وشام كاش
 # import user   # فك الحظر عن هذه الأسطر إذا كانت ملفاتك جاهزة
@@ -36,6 +37,8 @@ async def main():
         await init()
         print("✅ تم التحقق من الجداول وإصلاحها بنجاح.")
         
+        await initialize_tokens()
+
     except Exception as db_err:
         print(f"❌ فشل إقلاع قاعدة البيانات: {db_err}")
         return
