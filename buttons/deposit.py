@@ -1,0 +1,284 @@
+import aiohttp  # استبدال requests بـ aiohttp للأسنك
+from aiogram import types, Router, F  # تم استيراد F لاستخدامه كفلتر متقدم وآمن
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+
+# استيراد الحوض والدوال بنظام الأسنك
+from database.db import (
+    db_pool,
+    add_balance,
+    is_tx_used,
+    save_tx,
+    add_transaction,
+    process_deposit_commission,
+    get_deposit_bonus_rate,
+    check_and_add_pending_deposit,
+    fetch_and_delete_pending,
+    delete_pending_only
+)
+
+from config import GROUP_ID, GSM, API_KEY
+
+class SyriatelState(StatesGroup):
+    process = State()
+    number = State()
+
+class ShamCashState(StatesGroup):
+    process = State()
+    amount = State()
+
+class UsdtState(StatesGroup):
+    process = State()
+    amount = State()
+
+router = Router()
+
+# ========================= شحن رصيد =========================
+@router.message(F.text == "💳 شحن رصيد في البوت")
+async def deposit(m: types.Message):
+    kb = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📱 سيرياتيل كاش")],
+            [KeyboardButton(text="💳 شام كاش")],
+            [KeyboardButton(text="القائمة الرئيسية")],
+        ],
+        resize_keyboard=True
+    )
+    await m.answer("💳 اختر طريقة الشحن:", reply_markup=kb)
+
+# ========================= سيرياتيل كاش =========================
+@router.message(F.text == "📱 سيرياتيل كاش")
+async def syriatelD(m: types.Message, state: FSMContext):
+    await state.clear()  # تصفية أي حالات سابقة منعاً للتعليق
+    await m.answer(
+        "📱 يرجى تحويل المبلغ عن طريق الشحن اليدوي\n\n"
+        "📞 الأرقام المتاحة:\n\n"
+        f"1️⃣ {GSM}\n"
+        "2️⃣ \n"
+        "3️⃣ \n\n"
+        "🧾 أرسل رقم العملية",
+        reply_markup=ReplyKeyboardRemove()
+    )
+    await state.set_state(SyriatelState.process)
+
+# ========================= رقم عملية سيرياتيل =========================
+@router.message(SyriatelState.process)
+async def process_number(m: types.Message, state: FSMContext):
+    tx = m.text.strip()
+
+    if not tx.isdigit():
+        await m.answer("❌ أدخل رقم عملية صحيح (أرقام فقط)")
+        return
+
+    if await is_tx_used(tx):
+        await m.answer("❌ رقم العملية مستخدم مسبقاً")
+        await state.clear()
+        return
+    
+    await state.update_data(tx=tx)
+    await m.answer("📱 أرسل الرقم الذي حولت إليه")
+    await state.set_state(SyriatelState.number)
+
+@router.message(SyriatelState.number)
+async def check_transaction(m: types.Message, state: FSMContext):
+    user_number = m.text.strip()
+
+    if not user_number.isdigit():
+        await m.answer("❌ أدخل رقم صحيح (أرقام فقط)")
+        return
+
+    data_state = await state.get_data()
+    tx = data_state["tx"]
+
+    url = (
+        f"https://apisyria.com/api/v1"
+        f"?resource=syriatel"
+        f"&action=find_tx"
+        f"&tx={tx}"
+        f"&gsm={user_number}"
+        f"&api_key={API_KEY}"
+    )
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                if response.status == 200:
+                    data = await response.json()
+                else:
+                    await m.answer("⚠️ فشل الاتصال بسيرفر التحقق الخارجي.")
+                    await state.clear()
+                    return
+
+        print(data)
+
+        if data.get("success") and data.get("data", {}).get("found"):
+            transaction = data["data"]["transaction"]
+            amount = float(transaction["amount"])
+            am = amount * 100
+            to_number = transaction["to"]
+
+            if to_number != user_number:
+                await m.answer("❌ الرقم غير مطابق للعملية")
+                return
+
+            await save_tx(tx)
+            await process_deposit_commission(user_id=m.from_user.id, deposit_amount=am)
+            await add_transaction(
+                user_id=m.from_user.id,
+                tx_type="deposit",
+                amount=am,
+                status="completed",
+                txid="SyriatelCash"
+            )
+            
+            bonus_rate = await get_deposit_bonus_rate()
+            bonus_amount = am * bonus_rate
+            total_amount = am + bonus_amount
+            
+            await add_balance(m.from_user.id, total_amount)
+
+            if bonus_amount > 0:
+                await m.answer(
+                    f"✅ تم تأكيد شحن حسابك بمبلغ {am} ل.س وبسبب وجود بونص شحن بقيمة {bonus_rate*100}% تم إضافة {bonus_amount} ل.س مكافأة لحسابك! الرصيد المضاف كلياً: {total_amount} ل.س"
+                )
+            else:
+                await m.answer(
+                    f"✅ تم تأكيد العملية\n\n💰 تم إضافة {am} إلى رصيدك"
+                )
+        else:
+            await m.answer("❌ العملية غير موجودة")
+
+    except Exception as e:
+        print(e)
+        await m.answer("⚠️ حدث خطأ أثناء التحقق")
+
+    await state.clear()
+
+
+# ========================== شام كاش =========================
+@router.message(F.text == "💳 شام كاش")
+async def shamcashD(m: types.Message, state: FSMContext):
+    await state.clear()  # تصفية أي حالات سابقة لتفادي التعليق الافتراضي
+    await m.answer(
+        "💰 ارسل الى العنوان\n\n"
+        "TXXXXXXXXXXXXXXXXX\n\n"
+        "من فضلك لا تقم بأخفاء هوية حساب شام كاش الذي تقوم بالشحن منه\n\n"
+        "ثم ادخل رقم العملية\n\n",
+        reply_markup=ReplyKeyboardRemove()
+    )
+    await state.set_state(ShamCashState.process)
+
+# ========================= رقم العملية =========================
+@router.message(ShamCashState.process)
+async def process_number_shamcash(m: types.Message, state: FSMContext):
+    tx_text = m.text.strip()
+    if not tx_text:
+        await m.answer("❌ يرجى إرسال رقم عملية صحيح")
+        return
+        
+    await state.update_data(process=tx_text)
+    await m.answer("💰 أرسل المبلغ المحول")
+    await state.set_state(ShamCashState.amount)
+
+# ========================= المبلغ =========================
+@router.message(ShamCashState.amount)
+async def process_amount_shamcash(m: types.Message, state: FSMContext):
+    data = await state.get_data()
+    process = data.get("process")
+
+    try:
+        amount = int(m.text.strip())
+    except ValueError:
+        await m.answer("❌ أرسل مبلغ صحيح (أرقام فقط)")
+        return
+
+    uid = m.from_user.id
+    success = await check_and_add_pending_deposit(user_id=uid, amount=amount, tx_type= "shamcash")
+    if not success:
+        await m.answer("❌ لديك طلب قيد المراجعة سابقاً بالفعل.")
+        await state.clear()
+        return
+    
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ قبول", callback_data=f"acceptD_SH_{uid}"),
+                InlineKeyboardButton(text="❌ رفض", callback_data=f"rejectD_SH_{uid}")
+            ]
+        ]
+    )
+
+    await m.answer("⏳ انتظر قليلاً للتحقق من العملية من قبل الإدارة")
+    
+    try:
+        await m.bot.send_message(
+            GROUP_ID,
+            f"📥 طلب شحن جديد\n\n"
+            f"نوع الشحن: ShamCash\n\n"
+            f"👤 ID المستخدم: {uid}\n"
+            f"🧾 رقم العملية: {process}\n"
+            f"💰 المبلغ: {amount} ل.س",
+            reply_markup=kb
+        )
+    except Exception as e:
+        print(f"فشل إرسال الإشعار للجروب: {e}")
+        await m.answer("⚠️ حدثت مشكلة أثناء إرسال طلبك للإدارة.")
+        
+    await state.clear()
+    # ========================= قبول العملية =========================
+
+@router.callback_query(F.data.startswith("acceptD_SH_"))
+async def accept_shamcash(call: types.CallbackQuery):
+    uid = int(call.data.split("_")[2])
+
+    amount = await fetch_and_delete_pending(uid)
+
+    if amount is None:
+        await call.answer("❌ العملية غير موجودة أو تم معالجتها مسبقاً", show_alert=True)
+        return
+
+    await add_transaction(
+        user_id=uid,
+        tx_type="deposit",
+        amount=amount,
+        status="completed",
+        txid="ShamCash"
+    )
+    
+    await call.message.edit_text(call.message.text + "\n\n✅ تم قبول العملية بنجاح!")
+
+    await process_deposit_commission(user_id=uid, deposit_amount=amount)
+    
+    bonus_rate = await get_deposit_bonus_rate()
+    bonus_amount = amount * bonus_rate
+    total_amount = amount + bonus_amount
+    
+    await add_balance(uid, total_amount)
+    
+    try:
+        if bonus_amount > 0:
+            await call.bot.send_message(
+                uid,
+                f"✅ تم تأكيد شحن حسابك بمبلغ {amount} ل.س وبسبب وجود بونص شحن بقيمة {bonus_rate*100}% تم إضافة {bonus_amount} ل.س مكافأة لحسابك! الرصيد المضاف كلياً: {total_amount} ل.س"
+            )
+        else:
+            await call.bot.send_message(
+                uid,
+                f"✅ تم تأكيد العملية\n\n💰 تم إضافة {amount} إلى رصيدك"
+            )
+    except Exception as e:
+        print(f"تعذر إرسال رسالة للمستخدم {uid}: {e}")
+
+# ========================= رفض العملية =========================
+@router.callback_query(F.data.startswith("rejectD_SH_"))
+async def rejectshamcash(call: types.CallbackQuery):
+    uid = int(call.data.split("_")[2])
+
+    await delete_pending_only(uid)
+    
+    await call.message.edit_text(call.message.text + "\n\n❌ تم رفض العملية")
+    try:
+        await call.bot.send_message(uid, "❌ يوجد خطأ بالعملية، يرجى التحقق منها وتعديل البيانات المعطاة.")
+    except Exception as e:
+        print(f"تعذر مراسلة المستخدم المرفوض: {e}")
