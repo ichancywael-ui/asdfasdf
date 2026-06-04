@@ -2,3 +2,4 @@ aiohttp == 3.13.5
 aiogram == 3.27.0
 aiomysql == 0.3.2
 python-dotenv
+python-telegram-bot == 20.7
