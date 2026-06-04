@@ -1,21 +1,35 @@
 import os
 import aiohttp
 from dotenv import load_dotenv, set_key
-
+from database.db import save_tokens_to_db, get_tokens_from_db
 load_dotenv()
 
 # متغيرات عالمية يتم تحديثها في الذاكرة أثناء تشغيل السكربت
-MY_TOKEN = os.getenv("MY_TOKEN")
-MY_REFRESH_TOKEN = os.getenv("MY_REFRESH_TOKEN")
+MY_TOKEN = ""
+MY_REFRESH_TOKEN = ""
 
-def update_env_tokens(new_access, new_refresh):
-    """تحديث قيم التوكنات في الذاكرة وداخل ملف .env فوراً"""
+async def initialize_tokens():
+    """
+    دالة تهيئة التوكنات عند تشغيل المشروع.
+    تُستدعى هذه الدالة مرة واحدة فقط عند إقلاع السيرفر أو التطبيق (Startup)
+    بديلًا عن السطور القديمة التي كانت تقرأ من .env
+    """
+    global MY_TOKEN, MY_REFRESH_TOKEN
+    
+    # القراءة من قاعدة البيانات باستخدام الدالة التي عدلناها سابقاً
+    MY_TOKEN, MY_REFRESH_TOKEN = await get_tokens_from_db()
+    print("🚀 [System] Tokens initialized successfully from MySQL database!")
+    print(MY_TOKEN)
+    print(MY_REFRESH_TOKEN)
+
+async def update_env_tokens(new_access, new_refresh):
+    """تحديث قيم التوكنات في الذاكرة وداخل قاعدة بيانات MySQL فوراً"""
     global MY_TOKEN, MY_REFRESH_TOKEN
     MY_TOKEN = new_access
     MY_REFRESH_TOKEN = new_refresh
-    set_key(".env", "MY_TOKEN", new_access)
-    set_key(".env", "MY_REFRESH_TOKEN", new_refresh)
-    print("💾 [System] .env updated with new tokens!")
+    
+    await save_tokens_to_db(new_access, new_refresh)
+    print("💾 [System] Memory and Database updated with new tokens!")
 
 async def refresh_access_token_async():
     """طلب توكن جديد من السيرفر باستخدام الـ Refresh Token"""
@@ -31,7 +45,8 @@ async def refresh_access_token_async():
                     data = await response.json()
                     if data.get("status") is True:
                         res = data.get("result", {})
-                        update_env_tokens(res.get("accessToken"), res.get("refreshToken"))
+                        # تحديث التوكنات في الذاكرة وقاعدة البيانات
+                        await update_env_tokens(res.get("accessToken"), res.get("refreshToken"))
                         return True
     except Exception as e:
         print(f"❌ Error refreshing token: {e}")
@@ -53,6 +68,7 @@ async def send_post_request(url, payload, retry=True):
                 if response.status == 401 and retry:
                     print("⚠️ Token expired (401). Trying to refresh...")
                     if await refresh_access_token_async():
+                        # إعادة المحاولة بالتوكن الجديد
                         return await send_post_request(url, payload, retry=False)
                     else:
                         return {"success": False, "error": "session_expired"}
