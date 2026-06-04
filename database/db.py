@@ -114,6 +114,20 @@ async def init():
             VALUES ('bonus_text', '🎉 لا توجد عروض حالياً')
             """)
 
+           await cur.execute("""
+            CREATE TABLE IF NOT EXISTS session_tokens (
+                id INT PRIMARY KEY,
+                access_token TEXT,
+                refresh_token TEXT
+            )
+            """)
+            
+            await cur.execute("""
+            INSERT INTO session_tokens (id, access_token, refresh_token) 
+            VALUES (1, '', '') 
+            ON DUPLICATE KEY UPDATE id=id
+           """)
+
 async def add_user(user_id: int) -> bool:
     async with db_pool.acquire() as conn:
         async with conn.cursor() as cur:
@@ -778,6 +792,49 @@ async def update_bonus_in_db(new_text: str) -> bool:
                 
             except Exception as e:
                 print(f"❌ خطأ في دالة update_bonus_in_db: {e}")
+                try:
+                    await conn.rollback()  # التراجع في حال حدوث خطأ مفاجئ
+                except:
+                    pass
+                return False
+
+async def get_tokens_from_db():
+    """2. دالة جلب التوكنات من قاعدة البيانات عند بدء تشغيل البرنامج"""
+    async with db_pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await conn.begin()
+                await cur.execute("SELECT access_token, refresh_token FROM session_tokens WHERE id = 1")
+                result = await cur.fetchone()
+                await conn.commit()
+        
+        
+                if result:
+                    return result[0], result[1] # يعيد (access_token, refresh_token)
+                return "", ""
+            except Exception as e:
+                print(f"❌ خطأ في دالة get_tokens_from_db: {e}")
+                try:
+                    await conn.rollback()  # التراجع في حال حدوث خطأ مفاجئ
+                except:
+                    pass
+                return False
+
+async def save_tokens_to_db(access_token, refresh_token):
+    """3. دالة تحديث وحفظ التوكنات الجديدة في قاعدة البيانات"""
+    async with db_pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await conn.begin()
+                await cur.execute(
+                    "UPDATE session_tokens SET access_token = %s, refresh_token = %s WHERE id = 1",
+                    (access_token, refresh_token)
+                )
+                await conn.commit()
+                print("💾 [Database] Tokens successfully updated in MySQL!")
+                return True
+            except Exception as e:
+                print(f"❌ خطأ في دالة save_tokens_to_db: {e}")
                 try:
                     await conn.rollback()  # التراجع في حال حدوث خطأ مفاجئ
                 except:
