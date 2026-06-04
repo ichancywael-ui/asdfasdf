@@ -114,7 +114,7 @@ async def init():
             VALUES ('bonus_text', '🎉 لا توجد عروض حالياً')
             """)
 
-           await cur.execute("""
+            await cur.execute("""
             CREATE TABLE IF NOT EXISTS session_tokens (
                 id INT PRIMARY KEY,
                 access_token TEXT,
