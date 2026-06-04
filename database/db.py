@@ -121,12 +121,6 @@ async def init():
                 refresh_token TEXT
             )
             """)
-            
-            await cur.execute("""
-            INSERT INTO session_tokens (id, access_token, refresh_token) 
-            VALUES (1, '', '') 
-            ON DUPLICATE KEY UPDATE id=id
-           """)
 
 async def add_user(user_id: int) -> bool:
     async with db_pool.acquire() as conn:
