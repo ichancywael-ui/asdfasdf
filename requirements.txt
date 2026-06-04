@@ -3,3 +3,4 @@ aiogram == 3.27.0
 aiomysql == 0.3.2
 python-dotenv
 python-telegram-bot == 20.7
+cryptography == 41.0.7
