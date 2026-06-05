@@ -410,7 +410,7 @@ async def support(m: types.Message):
 
 @router.message(lambda m: m.text == "📨 رسالة للادمن")
 async def admin_msg(m: types.Message):
-    await m.answer("@SHARK_SUPPORT_ICHANCY")
+    await m.answer("@SHARK_ICHANCY_SUPPORT7")
 
 PAGE_SIZE = 5
 
