@@ -851,3 +851,27 @@ async def save_tokens_to_db(access_token, refresh_token):
                     pass
                 return False
 
+
+async def get_all_user_ids() -> list:
+    """
+    جلب جميع معرفات المستخدمين (user_id) لغرض إرسال رسالة جماعية (Broadcast).
+    """
+    async with db_pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await conn.begin()
+                # جلب عمود user_id فقط لتقليل استهلاك الذاكرة
+                await cur.execute("SELECT user_id FROM users")
+                rows = await cur.fetchall()
+                await conn.commit()
+                
+                # تحويل النتيجة من قائمة tuples إلى قائمة عادية [user_id1, user_id2, ...]
+                return [row[0] for row in rows] if rows else []
+            except Exception as e:
+                print(f"❌ خطأ في دالة get_all_user_ids: {e}")
+                try:
+                    await conn.rollback()
+                except:
+                    pass
+                return []
+
