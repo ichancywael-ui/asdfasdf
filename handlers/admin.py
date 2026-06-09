@@ -17,7 +17,8 @@ from database.db import (
     add_gift_code_db,
     get_target_user_transactions_admin,
     distribute_referral_commissions_db,
-    update_bonus_in_db
+    update_bonus_in_db,
+    get_all_user_ids
 )
 
 from aiogram.fsm.context import FSMContext
@@ -36,6 +37,9 @@ class AdminStates(StatesGroup):
 class AdminStatess(StatesGroup):
     waiting_for_bonus_text = State()
     waiting_for_deposit_bonus = State()
+
+class BroadcastStates(StatesGroup):
+    waiting_for_message = State()
 
 # إنشاء راوتر الأدمن بدلاً من الدالة القديمة القياسية
 router = Router()
@@ -438,3 +442,45 @@ async def save_deposit_bonus(m: types.Message, state: FSMContext):
     await set_deposit_bonus_rate(int(text))
     await m.answer(f"✅ تم تحديث بونص الشحن بنجاح! البونص الحالي هو: {text}% على كل عملية شحن جديدة.")
     await state.clear()
+
+@router.message(lambda m: m.text == "الإذاعة")
+async def start_broadcast(m: types.Message, state: FSMContext):
+    if m.from_user.id not in ADMIN_ID:
+        return
+    
+    await m.answer("📥 أرسل الآن الرسالة (نص، صورة، إلخ) التي تريد إرسالها لجميع المستخدمين:")
+    await state.set_state(BroadcastStates.waiting_for_message)
+
+@router.message(BroadcastStates.waiting_for_message)
+async def process_broadcast(m: types.Message, state: FSMContext):
+    await state.clear()
+    
+    # 1. جلب قائمة المستخدمين من الداتابيز باستخدام الدالة الجديدة
+    users = await get_all_user_ids()
+    
+    if not users:
+        await m.answer("❌ لا يوجد مستخدمين مسجلين في قاعدة البيانات حالياً.")
+        return
+    
+    sending_msg = await m.answer(f"⏳ جاري بدء الإرسال إلى {len(users)} مستخدم...")
+    
+    success_count = 0
+    fail_count = 0
+    
+    # 2. حلقة الإرسال لجميع المستخدمين
+    for user_id in users:
+        try:
+            # استخدام دالة copy_to لنسخ الرسالة كما هي (نص، ميديا، أزرار)
+            await m.copy_to(chat_id=user_id)
+            success_count += 1
+
+            await asyncio.sleep(0.05)
+        except Exception:
+            # يفشل الإرسال في حال قام المستخدم بحظر البوت (Block)
+            fail_count += 1
+            
+    await sending_msg.edit_text(
+        f"✅ تم الانتهاء من الإرسال الجماعي بنجاح!\n\n"
+        f"🟢 تم الإرسال إلى: {success_count}\n"
+        f"🔴 فشل الإرسال (حظر البوت): {fail_count}"
+    )
