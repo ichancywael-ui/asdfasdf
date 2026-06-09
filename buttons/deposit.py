@@ -180,7 +180,7 @@ async def shamcashD(m: types.Message, state: FSMContext):
         "يجب التواصل مع الدعم للسحب عن طريق شام كاش\n"
         "تواصل هنا👇\n"
         "@SHARK_SUPPORT_ICHANCY7",
-        reply_markup=kb
+        reply_markup=ReplyKeyboardRemove()
     )
 
 
