@@ -24,14 +24,6 @@ class SyriatelState(StatesGroup):
     process = State()
     amount = State()
 
-class ShamCashState(StatesGroup):
-    process = State()
-    amount = State()
-
-class UsdtState(StatesGroup):
-    process = State()
-    amount = State()
-
 router = Router()
 
 # ========================= شحن رصيد =========================
