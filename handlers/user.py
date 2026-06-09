@@ -75,6 +75,7 @@ router.include_router(withdraw_router)
 
 @router.message(lambda m: m.text and m.text.startswith("/start"))
 async def start(m: types.Message):
+    await state.clear()
     user_id = m.from_user.id
     args = m.text.split(maxsplit=1)
 
