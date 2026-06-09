@@ -98,6 +98,7 @@ adminmenu = ReplyKeyboardMarkup(
         [KeyboardButton(text="💰 توزيع أرباح الإحالات")],  
         [KeyboardButton(text="تعديل نص البونصات و العروض الحالية")], 
         [KeyboardButton(text="اضافة او حذف البونص")], 
+        [KeyboardButton(text="الإذاعة")],
         [KeyboardButton(text="القائمة الرئيسية")],
     ],
     resize_keyboard=True, 
