@@ -174,7 +174,7 @@ async def rejectsyriatelcash(call: types.CallbackQuery):
 
 # ========================== شام كاش =========================
 @router.message(F.text == "💳 شام كاش")
-async def shamcashD(m: types.Message, state: FSMContext):
+async def shamcashD(m: types.Message):
     await state.clear()  # تصفية أي حالات سابقة لتفادي التعليق الافتراضي
     await m.answer(
         "يجب التواصل مع الدعم للسحب عن طريث شام كاش\n"
